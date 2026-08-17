@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from PIL import Image
 from Rag.db import SupabaseDB
 from graph.workflow import Workflow
+import base64
 
 load_dotenv()
 
@@ -85,30 +86,28 @@ async def send_whatsapp_message(to: str, body: str):
 
 # ---------- Downloading incoming media (images) ----------
 
+
 async def download_whatsapp_media(media_id: str):
-    token = os.getenv("META_ACCESS_TOKEN")
-
-    print("META_ACCESS_TOKEN exists:", token is not None)
-    print("TOKEN length:", len(token) if token else 0)
-
     headers = {
-        "Authorization": f"Bearer {token}"
+        "Authorization": f"Bearer {META_ACCESS_TOKEN}"
     }
 
     async with httpx.AsyncClient() as client:
+
+        # Get media metadata
         meta_response = await client.get(
-            f"https://graph.facebook.com/v21.0/{media_id}",
+            f"{GRAPH_API_BASE}/{media_id}",
             headers=headers
         )
-
-        print("Meta status:", meta_response.status_code)
-        print("Meta response:", meta_response.text)
 
         meta_response.raise_for_status()
 
         media_info = meta_response.json()
-        media_url = media_info["url"]
 
+        media_url = media_info["url"]
+        mime_type = media_info.get("mime_type", "image/jpeg")
+
+        # Download actual image
         media_response = await client.get(
             media_url,
             headers=headers
@@ -116,7 +115,17 @@ async def download_whatsapp_media(media_id: str):
 
         media_response.raise_for_status()
 
-        return media_response.content
+        # Convert bytes → base64
+        encoded_image = base64.b64encode(
+            media_response.content
+        ).decode("utf-8")
+
+        # Create data URI
+        image_data_uri = (
+            f"data:{mime_type};base64,{encoded_image}"
+        )
+
+        return image_data_uri
 
 
 # ---------- Background processing (keeps the webhook response fast) ----------
