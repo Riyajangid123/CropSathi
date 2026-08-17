@@ -3,7 +3,6 @@ import hashlib
 import hmac
 import io
 import os
-
 import httpx
 from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
 from fastapi.responses import PlainTextResponse, JSONResponse
@@ -33,16 +32,19 @@ workflow_app = Workflow().build_workflow()
 
 @app.get("/webhook/whatsapp")
 async def verify_webhook(request: Request):
-    params = request.query_params
-    mode = params.get("hub.mode")
-    token = params.get("hub.verify_token")
-    challenge = params.get("hub.challenge")
+    mode = request.query_params.get("hub.mode")
+    token = request.query_params.get("hub.verify_token")
+    challenge = request.query_params.get("hub.challenge")
 
-    if mode == "subscribe" and token == META_VERIFY_TOKEN:
+    print("mode:", mode)
+    print("token received:", token)
+    print("challenge:", challenge)
+    print("token matches:", token == os.getenv("META_VERIFY_TOKEN"))
+
+    if mode == "subscribe" and token == os.getenv("META_VERIFY_TOKEN"):
         return PlainTextResponse(challenge, status_code=200)
 
     raise HTTPException(status_code=403, detail="Verification failed")
-
 
 # ---------- Signature validation (confirms the request really came from Meta) ----------
 
@@ -111,7 +113,7 @@ async def download_whatsapp_media(media_id: str) -> str:
 async def process_message(from_number: str, question: str, image_data_uri: str | None):
     farmer_id = db.get_or_create_farmer(from_number)
     recent = db.get_recent_conversations(farmer_id, limit=1)
-    
+
     prior_crop = recent[0]["crop"] if recent else None
     prior_language = recent[0]["language"] if recent and "language" in recent[0] else None
 
