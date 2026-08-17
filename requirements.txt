@@ -1,0 +1,15 @@
+fastapi
+langchain
+langchain-community
+langgraph
+langchain-groq
+langchain-huggingface
+uvicorn
+Pathlib
+flashrank
+pymupdf
+psycopg2-binary
+python-multipart  
+Pillow
+qdrant-client 
+langchain-qdrant
