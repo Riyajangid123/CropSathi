@@ -85,27 +85,38 @@ async def send_whatsapp_message(to: str, body: str):
 
 # ---------- Downloading incoming media (images) ----------
 
-async def download_whatsapp_media(media_id: str) -> str:
-    headers = {"Authorization": f"Bearer {META_ACCESS_TOKEN}"}
+async def download_whatsapp_media(media_id: str):
+    token = os.getenv("META_ACCESS_TOKEN")
+
+    print("META_ACCESS_TOKEN exists:", token is not None)
+    print("TOKEN length:", len(token) if token else 0)
+
+    headers = {
+        "Authorization": f"Bearer {token}"
+    }
 
     async with httpx.AsyncClient() as client:
-        meta_response = await client.get(f"{GRAPH_API_BASE}/{media_id}", headers=headers)
+        meta_response = await client.get(
+            f"https://graph.facebook.com/v21.0/{media_id}",
+            headers=headers
+        )
+
+        print("Meta status:", meta_response.status_code)
+        print("Meta response:", meta_response.text)
+
         meta_response.raise_for_status()
-        media_url = meta_response.json()["url"]
-        mime_type = meta_response.json().get("mime_type", "image/jpeg")
 
-        file_response = await client.get(media_url, headers=headers)
-        file_response.raise_for_status()
+        media_info = meta_response.json()
+        media_url = media_info["url"]
 
-    # Resize before encoding to avoid oversized payloads / token truncation
-    img = Image.open(io.BytesIO(file_response.content))
-    img.thumbnail((1024, 1024))
+        media_response = await client.get(
+            media_url,
+            headers=headers
+        )
 
-    buffer = io.BytesIO()
-    img.convert("RGB").save(buffer, format="JPEG", quality=85)
-    encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
+        media_response.raise_for_status()
 
-    return f"data:image/jpeg;base64,{encoded}"
+        return media_response.content
 
 
 # ---------- Background processing (keeps the webhook response fast) ----------
