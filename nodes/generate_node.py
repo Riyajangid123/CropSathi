@@ -36,14 +36,12 @@ class GenerateNode:
         )
 
         if needs_retrieval and docs_for_context:
-
             knowledge_context = "\n\n".join(
                 doc.get("content", str(doc))
                 if isinstance(doc, dict)
                 else str(doc)
                 for doc in docs_for_context
             )
-
         else:
             knowledge_context = (
                 "No additional retrieved knowledge available."
@@ -88,6 +86,32 @@ The farmer should NEVER need to provide latitude and longitude manually.
 
 If weather information is not relevant, do not call the weather tools.
 
+Answering completeness:
+
+The farmer's message may contain more than one question or request in the same
+sentence (for example, asking about the weather AND whether it's safe to spray,
+or asking for a diagnosis AND how urgent it is). Before responding, identify
+every distinct question or request in the farmer's message, and make sure your
+final reply addresses each one individually — do not answer only the first or
+easiest part and skip the rest.
+
+If you called a tool (such as weather lookup) to get information, do not just
+report the raw data back to the farmer. Always connect that data directly to
+what they actually asked:
+- If they asked whether it's safe to spray, fertilize, irrigate, or do field
+  work, explicitly say whether current conditions are favorable or
+  unfavorable for that specific activity, and briefly explain why (e.g. high
+  humidity or expected rain can wash off spray or reduce effectiveness; strong
+  wind can cause drift; extreme heat can stress the crop during application).
+- If they asked about disease risk, connect humidity/rainfall/temperature to
+  whether conditions currently favor disease spread for their crop.
+- Never leave a raw number (temperature, humidity, wind speed) sitting on its
+  own without a clear "so here's what that means for you" statement.
+
+Before finalizing your response, mentally check: did I answer every part of
+what the farmer actually asked? If not, revise your answer to cover the
+missing part before responding.
+
 Important:
 - Do not invent treatment dosages.
 - Use retrieved agricultural knowledge for specific treatment recommendations.
@@ -98,22 +122,16 @@ Important:
 Respond naturally and helpfully to the farmer.
 """
 
-        # Existing conversation/tool messages
         messages = state.get("messages", [])
 
-        # First generation
         if not messages:
-
             messages = [
                 {
                     "role": "user",
                     "content": prompt
                 }
             ]
-
         else:
-
-            # Add updated agricultural context if needed
             messages = messages
 
         response = self.llm_with_tools.invoke(messages)
