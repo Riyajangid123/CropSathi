@@ -6,19 +6,21 @@ class RerankNode:
 
     def __init__(self):
         self.reranker = CustomReranker()
-        
 
     def run(self, state: AgroState):
+        documents = state.get("retrieved_docs", [])
 
-        documents = state["retrieved_docs"]
-        query="""Crop: {state.get("crop", "")}
-                
-                Disease: {state.get("disease", "")}
-                
-                Symptoms:{state.get("observations", "")}
-                
-                Farmer Question:{state.get("question", "")}
-            """
+        if not documents:
+            return {**state, "reranked_docs": []}
+
+        query = f"""Crop: {state.get("crop", "")}
+
+Disease: {state.get("disease", "")}
+
+Symptoms: {state.get("observations", "")}
+
+Farmer Question: {state.get("question", "")}
+"""
 
         reranked_docs = self.reranker.rerank(
             query=query,
