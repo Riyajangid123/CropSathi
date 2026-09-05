@@ -1,4 +1,5 @@
-from typing import TypedDict
+from typing import TypedDict,Annotated
+from langgraph.graph.message import add_messages
 
 
 class AgroState(TypedDict, total=False):
@@ -19,3 +20,5 @@ class AgroState(TypedDict, total=False):
 
     needs_retrieval: bool
     diagnosis_uncertain: bool
+
+    messages: Annotated[list, add_messages]

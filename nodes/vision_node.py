@@ -9,7 +9,7 @@ from schemas.schema import VisionNodeSchema
 class VisionNode:
 
     def __init__(self):
-        self.llm = LLM().llm(reasoning_effort="none")   
+        self.llm = LLM().llm(max_tokens=1500)
 
     def run(self, state: AgroState):
 
@@ -17,55 +17,108 @@ class VisionNode:
         image = state.get("image", "")
 
         prompt = f"""
-You are the vision analysis component of an agricultural AI system.
+You are an agricultural image analysis system.
 
-Analyze the uploaded plant image carefully.
-Do not show your reasoning, analysis process, draft notes, or self-correction steps.
-Output ONLY the final message to the farmer — no headers, no meta-commentary, no "Draft:" or "Analysis:" labels.
+Analyze the uploaded plant image.
 
 Farmer's question:
 {question}
 
-Your task is ONLY to analyze the image and produce structured observations.
+Your job is ONLY to identify what is visibly present in the image.
 
-Respond ONLY with a valid JSON object, and nothing else — no explanation, no markdown fences.
+Return ONLY one valid JSON object.
+
+Do NOT:
+- explain your reasoning
+- show analysis steps
+- use <think>
+- provide treatment
+- provide recommendations
+- use markdown
+- use ```json
+- add text before or after the JSON
+
 Use EXACTLY these keys:
 
 {{
-  "crop": "<string, the plant/crop if visually identifiable, else 'unknown'>",
-  "disease": "<string, most likely disease/pest/abnormality if identifiable, else 'unknown'>",
-  "observations": "<string, 2-4 concise sentences describing visible symptoms>",
-  "confidence": <float between 0 and 1>,
-  "needs_retrieval": <true or false>,
-  "diagnosis_uncertain": <true or false>,
-  "language": "<string, the language used by the farmer>"
+  "crop": "string",
+  "disease": "string",
+  "observations": "string",
+  "confidence": 0.0,
+  "needs_retrieval": true,
+  "diagnosis_uncertain": true,
+  "language": "string"
 }}
 
-Important rules:
-- Do not invent symptoms that are not visible.
-- Do not claim certainty when the image is unclear.
-- If multiple diseases are possible, mention the alternatives within the observations field.
-- Do not provide treatment recommendations.
-- If the image is unclear, use a low confidence score and set diagnosis_uncertain to true.
-- confidence must be a number, and needs_retrieval / diagnosis_uncertain must be JSON booleans (true or false), not strings.
+Rules:
+
+1. crop:
+   Identify the crop if visually identifiable.
+   Otherwise use "unknown".
+
+2. disease:
+   Identify the most likely disease, pest, or abnormality if visually identifiable.
+   Otherwise use "unknown".
+
+3. observations:
+   Give only 1-2 concise sentences describing visible symptoms.
+   Do not invent symptoms.
+
+4. confidence:
+   Must be a number between 0 and 1.
+
+5. needs_retrieval:
+   Set true if agricultural knowledge should be retrieved to verify the diagnosis.
+   Otherwise false.
+
+6. diagnosis_uncertain:
+   Set true if the image is unclear or multiple diagnoses are possible.
+   Otherwise false.
+
+7. language:
+   Use the language of the farmer's question.
+
+Return JSON only.
 """
 
         messages = [
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": image}},
-                ],
+                    {
+                        "type": "text",
+                        "text": prompt
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": image
+                        }
+                    }
+                ]
             }
         ]
 
         raw_response = self.llm.invoke(messages)
+
+        print("\n===== VISION RESPONSE =====")
+        print("CONTENT:", repr(raw_response.content))
+        print("ADDITIONAL KWARGS:", raw_response.additional_kwargs)
+        print("RESPONSE METADATA:", raw_response.response_metadata)
+        print("===========================\n")
+
         raw_text = raw_response.content
 
-        parsed = self._extract_json(raw_text)
-        validated = VisionNodeSchema(**parsed)
+        if not raw_text or not raw_text.strip():
 
+            raise ValueError(
+                "Vision model returned empty content. "
+                "Check reasoning configuration/output token limit."
+            )
+
+        parsed = self._extract_json(raw_text)
+
+        validated = VisionNodeSchema(**parsed)
 
         state["crop"] = validated.crop
         state["disease"] = validated.disease
@@ -79,17 +132,56 @@ Important rules:
 
     @staticmethod
     def _extract_json(text: str) -> dict:
-        """Strip markdown fences if present, then parse JSON. Falls back to
-        regex-extracting the first {...} block if the model added extra text."""
+
+        if not text or not text.strip():
+            raise ValueError(
+                "Model returned empty content."
+            )
+
         cleaned = text.strip()
 
-        if cleaned.startswith("```"):
-            cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned, flags=re.MULTILINE).strip()
+        # Remove <think>...</think> if the model happens to include it
+        cleaned = re.sub(
+            r"<think>.*?</think>",
+            "",
+            cleaned,
+            flags=re.DOTALL | re.IGNORECASE
+        ).strip()
 
+        # Remove markdown fences
+        cleaned = re.sub(
+            r"```(?:json)?",
+            "",
+            cleaned,
+            flags=re.IGNORECASE
+        )
+
+        cleaned = cleaned.replace("```", "").strip()
+
+        # First try parsing the entire response
         try:
             return json.loads(cleaned)
         except json.JSONDecodeError:
-            match = re.search(r"\{.*\}", cleaned, re.DOTALL)
-            if match:
-                return json.loads(match.group(0))
-            raise ValueError(f"Could not parse JSON from model response: {text}")
+            pass
+
+        # If extra text exists, find the JSON object
+        match = re.search(
+            r"\{.*\}",
+            cleaned,
+            re.DOTALL
+        )
+
+        if not match:
+            raise ValueError(
+                f"Could not find JSON in model response:\n{cleaned}"
+            )
+
+        json_text = match.group(0)
+
+        try:
+            return json.loads(json_text)
+
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"Invalid JSON from model response:\n{json_text}"
+            ) from e

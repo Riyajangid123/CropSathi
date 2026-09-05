@@ -5,7 +5,7 @@ from nodes.llm import LLM
 class LanguageNode:
 
     def __init__(self):
-        self.llm = LLM().llm(reasoning_effort="none")
+        self.llm = LLM().llm()
 
     def run(self, state: AgroState):
         question = state.get("question", "")

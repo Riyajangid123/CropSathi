@@ -30,6 +30,9 @@ workflow_app = Workflow().build_workflow()
 
 
 # ---------- Webhook verification (Meta calls this once when you set up the webhook) ----------
+@app.get("/")
+def home():
+    return {"message": "Welcome to the Agrotech WhatsApp Bot"}
 
 @app.get("/webhook/whatsapp")
 async def verify_webhook(request: Request):
