@@ -1,12 +1,14 @@
 import os
 
 from dotenv import load_dotenv
+
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import (
     Distance,
     VectorParams,
     PayloadSchemaType,
 )
+
 from langchain_qdrant import QdrantVectorStore
 from langchain_huggingface import HuggingFaceEndpointEmbeddings
 
@@ -20,8 +22,10 @@ load_dotenv()
 
 COLLECTION_NAME = "agrotech_knowledge_base"
 
-# sentence-transformers/all-MiniLM-L6-v2
+# all-MiniLM-L6-v2 = 384 dimensions
 EMBEDDING_DIM = 384
+
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 # ============================================================
@@ -37,16 +41,24 @@ class CustomVectorStore:
         # ----------------------------------------------------
 
         self.qdrant_url = os.getenv("QDRANT_URL")
-        self.qdrant_api_key = os.getenv("QDRANT_API_KEY")
+
+        self.qdrant_api_key = os.getenv(
+            "QDRANT_API_KEY"
+        )
+
         self.huggingface_api_key = os.getenv(
             "HUGGINGFACEHUB_API_TOKEN"
         )
 
         if not self.qdrant_url:
-            raise ValueError("QDRANT_URL is not set!")
+            raise ValueError(
+                "QDRANT_URL is not set!"
+            )
 
         if not self.qdrant_api_key:
-            raise ValueError("QDRANT_API_KEY is not set!")
+            raise ValueError(
+                "QDRANT_API_KEY is not set!"
+            )
 
         if not self.huggingface_api_key:
             raise ValueError(
@@ -54,29 +66,47 @@ class CustomVectorStore:
             )
 
         # ----------------------------------------------------
-        # Embedding model
+        # Hugging Face REMOTE embeddings
         # ----------------------------------------------------
 
         self.embeddings = HuggingFaceEndpointEmbeddings(
-            model="sentence-transformers/all-MiniLM-L6-v2",
-            huggingfacehub_api_token=self.huggingface_api_key,
+
+            model=EMBEDDING_MODEL,
+
+            task="feature-extraction",
+
+            huggingfacehub_api_token=(
+                self.huggingface_api_key
+            ),
+        )
+
+        print(
+            f"Using HuggingFace remote embedding model: "
+            f"{EMBEDDING_MODEL}"
         )
 
         # ----------------------------------------------------
-        # Qdrant client
+        # Qdrant Cloud
         # ----------------------------------------------------
 
         self.client = QdrantClient(
+
             url=self.qdrant_url,
+
             api_key=self.qdrant_api_key,
+
             timeout=60,
         )
 
         # ----------------------------------------------------
-        # Ensure collection + indexes
+        # Collection
         # ----------------------------------------------------
 
         self._ensure_collection_exists()
+
+        # ----------------------------------------------------
+        # Payload indexes
+        # ----------------------------------------------------
 
         self._ensure_payload_indexes()
 
@@ -87,16 +117,16 @@ class CustomVectorStore:
 
     def _ensure_collection_exists(self):
 
-        collections = self.client.get_collections().collections
+        collections = (
+            self.client
+            .get_collections()
+            .collections
+        )
 
         collection_names = [
             collection.name
             for collection in collections
         ]
-
-        # ----------------------------------------------------
-        # Create collection only if it doesn't exist
-        # ----------------------------------------------------
 
         if COLLECTION_NAME not in collection_names:
 
@@ -106,14 +136,20 @@ class CustomVectorStore:
             )
 
             self.client.create_collection(
+
                 collection_name=COLLECTION_NAME,
+
                 vectors_config=VectorParams(
+
                     size=EMBEDDING_DIM,
+
                     distance=Distance.COSINE,
                 ),
             )
 
-            print("Qdrant collection created.")
+            print(
+                "Qdrant collection created."
+            )
 
         else:
 
@@ -129,23 +165,15 @@ class CustomVectorStore:
 
     def _ensure_payload_indexes(self):
 
-        """
-        Qdrant does NOT automatically create indexes
-        for payload fields.
-
-        Our RAG filters use:
-
-            metadata.crop
-            metadata.disease
-
-        Therefore those fields must have KEYWORD indexes.
-        """
-
-        collection_info = self.client.get_collection(
-            COLLECTION_NAME
+        collection_info = (
+            self.client.get_collection(
+                COLLECTION_NAME
+            )
         )
 
-        payload_schema = collection_info.payload_schema
+        payload_schema = (
+            collection_info.payload_schema
+        )
 
         # ----------------------------------------------------
         # metadata.crop
@@ -154,24 +182,26 @@ class CustomVectorStore:
         if "metadata.crop" not in payload_schema:
 
             print(
-                "Creating payload index: metadata.crop"
+                "Creating index: metadata.crop"
             )
 
             self.client.create_payload_index(
+
                 collection_name=COLLECTION_NAME,
+
                 field_name="metadata.crop",
+
                 field_schema=PayloadSchemaType.KEYWORD,
             )
 
             print(
-                "Payload index created: metadata.crop"
+                "Created index: metadata.crop"
             )
 
         else:
 
             print(
-                "Payload index already exists: "
-                "metadata.crop"
+                "Index already exists: metadata.crop"
             )
 
         # ----------------------------------------------------
@@ -181,24 +211,26 @@ class CustomVectorStore:
         if "metadata.disease" not in payload_schema:
 
             print(
-                "Creating payload index: metadata.disease"
+                "Creating index: metadata.disease"
             )
 
             self.client.create_payload_index(
+
                 collection_name=COLLECTION_NAME,
+
                 field_name="metadata.disease",
+
                 field_schema=PayloadSchemaType.KEYWORD,
             )
 
             print(
-                "Payload index created: metadata.disease"
+                "Created index: metadata.disease"
             )
 
         else:
 
             print(
-                "Payload index already exists: "
-                "metadata.disease"
+                "Index already exists: metadata.disease"
             )
 
 
@@ -206,15 +238,16 @@ class CustomVectorStore:
     # VECTOR STORE
     # ========================================================
 
-    def vector_store(self) -> QdrantVectorStore:
+    def vector_store(self):
 
-        vectorstore = QdrantVectorStore(
+        return QdrantVectorStore(
+
             client=self.client,
+
             collection_name=COLLECTION_NAME,
+
             embedding=self.embeddings,
         )
-
-        return vectorstore
 
 
     # ========================================================
@@ -223,12 +256,15 @@ class CustomVectorStore:
 
     def add_documents(
         self,
-        vectorstore: QdrantVectorStore,
+        vectorstore,
         split_docs,
     ):
 
         if not split_docs:
-            print("No documents to add.")
+
+            print(
+                "No documents to add."
+            )
 
             return vectorstore
 
@@ -237,15 +273,55 @@ class CustomVectorStore:
             "to Qdrant..."
         )
 
-        vectorstore.add_documents(split_docs)
+        vectorstore.add_documents(
+            split_docs
+        )
 
-        print("Documents successfully added.")
+        print(
+            "Documents successfully added."
+        )
 
         return vectorstore
 
 
     # ========================================================
-    # CHECK COLLECTION
+    # TEST EMBEDDING
+    # ========================================================
+
+    def test_embedding(self):
+
+        print(
+            "\nTesting HuggingFace embedding..."
+        )
+
+        text = (
+            "Northern Corn Leaf Blight "
+            "in corn plants"
+        )
+
+        vector = self.embeddings.embed_query(
+            text
+        )
+
+        print(
+            "Embedding generated successfully."
+        )
+
+        print(
+            "Embedding dimension:",
+            len(vector)
+        )
+
+        print(
+            "First 5 values:",
+            vector[:5]
+        )
+
+        return vector
+
+
+    # ========================================================
+    # COLLECTION INFO
     # ========================================================
 
     def collection_info(self):
@@ -254,7 +330,9 @@ class CustomVectorStore:
             COLLECTION_NAME
         )
 
-        print("\n========== QDRANT COLLECTION ==========")
+        print(
+            "\n========== QDRANT COLLECTION =========="
+        )
 
         print(
             "Collection:",
@@ -276,40 +354,49 @@ class CustomVectorStore:
             info.payload_schema
         )
 
-        print("========================================\n")
+        print(
+            "========================================\n"
+        )
 
         return info
 
 
     # ========================================================
-    # CHECK SAMPLE PAYLOAD
+    # SAMPLE PAYLOAD
     # ========================================================
 
     def check_sample_payload(self):
 
-        """
-        Useful for debugging the structure of your
-        stored metadata.
-        """
-
         points, next_page = self.client.scroll(
+
             collection_name=COLLECTION_NAME,
+
             limit=1,
+
             with_payload=True,
+
             with_vectors=False,
         )
 
         if not points:
 
-            print("No points found in Qdrant.")
+            print(
+                "No points found in Qdrant."
+            )
 
             return None
 
-        print("\n========== SAMPLE PAYLOAD ==========")
+        print(
+            "\n========== SAMPLE PAYLOAD =========="
+        )
 
-        print(points[0].payload)
+        print(
+            points[0].payload
+        )
 
-        print("====================================\n")
+        print(
+            "====================================\n"
+        )
 
         return points[0].payload
 
@@ -324,22 +411,37 @@ if __name__ == "__main__":
 
         store = CustomVectorStore()
 
-        # Show collection information
+        # ----------------------------------------------------
+        # TEST 1: HF embedding
+        # ----------------------------------------------------
+
+        store.test_embedding()
+
+        # ----------------------------------------------------
+        # TEST 2: Qdrant collection
+        # ----------------------------------------------------
+
         store.collection_info()
 
-        # Show one stored document's payload
+        # ----------------------------------------------------
+        # TEST 3: Payload
+        # ----------------------------------------------------
+
         store.check_sample_payload()
 
         print(
-            "Qdrant vector store initialized successfully."
+            "\nQdrant + HuggingFace "
+            "initialized successfully."
         )
 
     except Exception as e:
 
         print(
-            "\nERROR INITIALIZING QDRANT:"
+            "\nERROR:"
         )
 
-        print(e)
+        print(
+            repr(e)
+        )
 
         raise
